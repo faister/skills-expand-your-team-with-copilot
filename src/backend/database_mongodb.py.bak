@@ -1,88 +1,15 @@
 """
-In-memory database configuration for development when MongoDB is not available
+MongoDB database configuration and setup for Mergington High School API
 """
 
+from pymongo import MongoClient
 from argon2 import PasswordHasher
 
-# In-memory storage
-_activities_data = {}
-_teachers_data = {}
-
-class InMemoryCollection:
-    def __init__(self, data_dict):
-        self.data = data_dict
-    
-    def find(self, query=None):
-        """Find documents matching query"""
-        if query is None:
-            query = {}
-        
-        results = []
-        for doc_id, doc in self.data.items():
-            # Simple query matching for development
-            match = True
-            for key, value in query.items():
-                if key.startswith("schedule_details."):
-                    nested_key = key.split(".", 1)[1]
-                    if nested_key == "days" and isinstance(value, dict) and "$in" in value:
-                        # Handle $in queries for days
-                        doc_days = doc.get("schedule_details", {}).get("days", [])
-                        if not any(day in doc_days for day in value["$in"]):
-                            match = False
-                            break
-                    elif nested_key in ["start_time", "end_time"]:
-                        # Handle time range queries
-                        doc_value = doc.get("schedule_details", {}).get(nested_key)
-                        if isinstance(value, dict):
-                            if "$gte" in value and doc_value < value["$gte"]:
-                                match = False
-                                break
-                            if "$lte" in value and doc_value > value["$lte"]:
-                                match = False
-                                break
-                else:
-                    if doc.get(key) != value:
-                        match = False
-                        break
-            
-            if match:
-                result_doc = {"_id": doc_id, **doc}
-                results.append(result_doc)
-        
-        return results
-    
-    def find_one(self, query):
-        """Find single document"""
-        results = self.find(query)
-        return results[0] if results else None
-    
-    def insert_one(self, doc):
-        """Insert document"""
-        doc_id = doc.pop("_id")
-        self.data[doc_id] = doc
-        return True
-    
-    def count_documents(self, query=None):
-        """Count documents"""
-        return len(self.find(query or {}))
-    
-    def aggregate(self, pipeline):
-        """Simple aggregation for getting unique days"""
-        if len(pipeline) >= 2 and pipeline[0].get("$unwind") == "$schedule_details.days":
-            # Get unique days
-            days = set()
-            for doc in self.data.values():
-                doc_days = doc.get("schedule_details", {}).get("days", [])
-                days.update(doc_days)
-            
-            # Return in expected format
-            return [{"_id": day} for day in sorted(days)]
-        
-        return []
-
-# Create collections
-activities_collection = InMemoryCollection(_activities_data)
-teachers_collection = InMemoryCollection(_teachers_data)
+# Connect to MongoDB
+client = MongoClient('mongodb://localhost:27017/')
+db = client['mergington_high']
+activities_collection = db['activities']
+teachers_collection = db['teachers']
 
 # Methods
 def hash_password(password):
@@ -236,17 +163,6 @@ initial_activities = {
         },
         "max_participants": 16,
         "participants": ["william@mergington.edu", "jacob@mergington.edu"]
-    },
-    "Manga Maniacs": {
-        "description": "Explore the fantastic stories of the most interesting characters from Japanese Manga (graphic novels).",
-        "schedule": "Tuesdays, 7:00 PM - 8:30 PM",
-        "schedule_details": {
-            "days": ["Tuesday"],
-            "start_time": "19:00",
-            "end_time": "20:30"
-        },
-        "max_participants": 15,
-        "participants": []
     }
 }
 
